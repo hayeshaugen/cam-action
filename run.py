@@ -1,4 +1,4 @@
-"""Start the local RTSP server and camera bridge together; Ctrl-C stops both."""
+"""Start MediaMTX and Cam Action together; Ctrl-C stops both."""
 
 import argparse
 import os
@@ -46,7 +46,7 @@ def main():
             raise RuntimeError("MediaMTX failed; see its log above")
         children.append(
             subprocess.Popen(
-                [sys.executable, "-m", "thermal_bridge", "--ffmpeg", ffmpeg, *extra], cwd=ROOT
+                [sys.executable, "-m", "cam_action", "--ffmpeg", ffmpeg, *extra], cwd=ROOT
             )
         )
         print(

@@ -1,4 +1,10 @@
-"""Only this module knows libusb. No camera commands or pixel interpretation."""
+"""libusb transport boundary.
+
+Only this module loads the native USB library and owns USB handles. Camera
+commands and image interpretation belong in the camera adapter.
+"""
+
+from __future__ import annotations
 
 import ctypes as C
 import ctypes.util
@@ -17,7 +23,9 @@ class UsbError(OSError):
 
 
 class LibusbTransport:
-    def __init__(self, vid, pid, interface, alternate, library=None):
+    def __init__(
+        self, vid: int, pid: int, interface: int, alternate: int, library: str | None = None
+    ):
         path = library or os.environ.get("LIBUSB_LIBRARY") or ctypes.util.find_library("usb-1.0")
         if not path and os.path.exists("/opt/homebrew/lib/libusb-1.0.dylib"):
             path = "/opt/homebrew/lib/libusb-1.0.dylib"
@@ -63,11 +71,11 @@ class LibusbTransport:
             self.close()
             raise
 
-    def _check(self, result):
+    def _check(self, result: int) -> None:
         if result < 0:
             raise UsbError(self.lib.libusb_error_name(result).decode())
 
-    def read(self, endpoint, size, timeout_ms):
+    def read(self, endpoint: int, size: int, timeout_ms: int) -> bytes:
         buf = C.create_string_buffer(size)
         n = C.c_int()
         result = self.lib.libusb_bulk_transfer(
@@ -81,7 +89,7 @@ class LibusbTransport:
         self._check(result)
         return buf.raw[: n.value]
 
-    def write(self, endpoint, data, timeout_ms):
+    def write(self, endpoint: int, data: bytes, timeout_ms: int) -> None:
         buf = C.create_string_buffer(data)
         n = C.c_int()
         self._check(
@@ -92,7 +100,7 @@ class LibusbTransport:
         if n.value != len(data):
             raise UsbError("Short command write")
 
-    def close(self):
+    def close(self) -> None:
         if self.handle:
             if self.claimed:
                 self.lib.libusb_set_interface_alt_setting(self.handle, self.interface, 0)

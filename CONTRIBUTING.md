@@ -14,7 +14,7 @@ python -m ruff format --check .
 python -m build
 ```
 
-The normal tests require no USB hardware, vendor application, network connection, or private recordings. The optional recorded-session test uses the `THERMAL_BRIDGE_TEST_CAPTURE` environment variable to point to a local capture in the documented format. Never commit that recording.
+The normal tests require no USB hardware, vendor application, network connection, or private recordings. The optional recorded-session test uses the `CAM_ACTION_TEST_CAPTURE` environment variable to point to a local capture in the documented format. Never commit that recording.
 
 ## Boundaries
 

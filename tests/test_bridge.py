@@ -5,8 +5,8 @@ from pathlib import Path
 
 import numpy as np
 
-from thermal_bridge.camera import RT160, SensorFrame
-from thermal_bridge.processing import Calibration, Renderer
+from cam_action.camera import RT160, SensorFrame
+from cam_action.processing import Calibration, Renderer
 
 
 class Fake:
@@ -19,9 +19,9 @@ class Fake:
 
 class ProtocolTests(unittest.TestCase):
     def test_recorded_hardware_and_shutter(self):
-        fixture_name = os.environ.get("THERMAL_BRIDGE_TEST_CAPTURE")
+        fixture_name = os.environ.get("CAM_ACTION_TEST_CAPTURE")
         if not fixture_name:
-            self.skipTest("Set THERMAL_BRIDGE_TEST_CAPTURE for optional hardware recording")
+            self.skipTest("Set CAM_ACTION_TEST_CAPTURE for optional hardware recording")
         fixture = Path(fixture_name)
         data = fixture.read_bytes()
         cam = RT160(Fake())
@@ -66,7 +66,7 @@ class ProtocolTests(unittest.TestCase):
         for _ in range(6):
             cam.accept(packet(140))
         self.assertIsNone(cam.accept(packet(143)))
-        self.assertEqual(cam.parts, [])
+        self.assertEqual(cam.pending_transfers, 0)
         for _ in range(6):
             cam.accept(packet(140))
         cam.accept(b"bad")
@@ -122,7 +122,7 @@ class SyntheticHardwareTests(unittest.TestCase):
 
     def test_unknown_model_rejected(self):
         cam = RT160(Fake())
-        with self.assertRaisesRegex(ValueError, "Unsupported model"):
+        with self.assertRaisesRegex(ValueError, "unsupported camera model"):
             for p in self.image_packets("R-T256"):
                 cam.accept(p)
 

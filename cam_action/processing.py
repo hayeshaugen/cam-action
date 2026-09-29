@@ -1,14 +1,25 @@
-"""Sensor-domain correction and display rendering; no USB or streaming dependencies."""
+"""Sensor correction and display rendering.
+
+This module deliberately knows nothing about USB, camera commands, RTSP, or
+HTTP. It accepts arrays from a camera adapter and returns arrays for an output
+adapter.
+"""
+
+from __future__ import annotations
 
 import struct
 import zlib
+from typing import Literal
 
 import numpy as np
+
+Palette = Literal["gray", "blackhot", "iron"]
+Rotation = Literal[0, 90, 180, 270]
 
 
 class Calibration:
     # Timing is a hardware-adapter policy, not a detected firmware flag.
-    def __init__(self, gain, timing=(0.30, 0.75, 1.30)):
+    def __init__(self, gain: np.ndarray, timing: tuple[float, float, float] = (0.30, 0.75, 1.30)):
         self.timing = timing
         self.gain = gain
         self.reference = None
@@ -18,13 +29,13 @@ class Calibration:
         self.state = "needs calibration"
         self.last_mean = None
 
-    def begin(self, now):
+    def begin(self, now: float) -> None:
         self.start = now
         self.samples = []
         self.baseline = self.last_mean
         self.state = "calibrating"
 
-    def apply(self, pixels, now):
+    def apply(self, pixels: np.ndarray, now: float) -> np.ndarray | None:
         self.last_mean = float(pixels.mean())
         if self.start is not None:
             age = now - self.start
@@ -54,7 +65,9 @@ class Renderer:
     def __init__(self):
         self.bounds = None
 
-    def render(self, signal, rotation=180, palette="gray"):
+    def render(
+        self, signal: np.ndarray, rotation: Rotation = 180, palette: Palette = "gray"
+    ) -> np.ndarray:
         lo, hi = np.percentile(signal, [1, 99])
         hi = max(hi, lo + 1)
         if self.bounds is None:
@@ -94,7 +107,7 @@ class Renderer:
         return out
 
 
-def png(rgb):
+def png(rgb: np.ndarray) -> bytes:
     h, w, _ = rgb.shape
 
     def chunk(t, b):

@@ -1,3 +1,5 @@
+"""Run the Cam Action R-T160 camera service."""
+
 import argparse
 import logging
 import signal
@@ -11,8 +13,10 @@ from .service import Acquisition, State
 from .transport import LibusbTransport
 
 
-def main():
-    ap = argparse.ArgumentParser(description="R-T160 thermal camera to RTSP and local preview")
+def main() -> None:
+    ap = argparse.ArgumentParser(
+        description="Read a supported proprietary camera and publish its image over RTSP"
+    )
     ap.add_argument("--rtsp", default="rtsp://127.0.0.1:18554/thermal")
     ap.add_argument("--ffmpeg", default="ffmpeg")
     ap.add_argument("--libusb")
@@ -35,7 +39,7 @@ def main():
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())
     threads = [
-        threading.Thread(target=acquire.run, name="camera", daemon=True),
+        threading.Thread(target=acquire.run, name="camera-acquisition", daemon=True),
         threading.Thread(target=output.run, name="publisher", daemon=True),
         threading.Thread(target=http.serve_forever, name="control", daemon=True),
     ]

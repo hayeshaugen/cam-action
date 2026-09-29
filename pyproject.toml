@@ -3,13 +3,15 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "thermal-bridge"
+name = "cam-action"
 version = "0.1.0"
-description = "An experimental bridge from proprietary USB thermal cameras to RTSP"
+description = "Open adapters for proprietary imaging devices and standard video outputs"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.24,<3"]
-keywords = ["thermal-camera", "rtsp", "libusb", "obs", "frigate"]
+license = { file = "LICENSE" }
+authors = [{ name = "Hayes Haugen" }]
+keywords = ["thermal-camera", "camera", "rtsp", "libusb", "obs", "frigate"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Programming Language :: Python :: 3",
@@ -20,10 +22,10 @@ classifiers = [
 dev = ["ruff>=0.11,<1", "build>=1,<2"]
 
 [project.scripts]
-thermal-bridge = "thermal_bridge.__main__:main"
+cam-action = "cam_action.__main__:main"
 
 [tool.setuptools.packages.find]
-include = ["thermal_bridge*"]
+include = ["cam_action*"]
 
 [tool.ruff]
 target-version = "py310"

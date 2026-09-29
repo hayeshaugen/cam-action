@@ -1,88 +1,107 @@
-# Thermal Bridge
+# Cam Action
 
-**Use a proprietary USB thermal camera as an RTSP video source.**
+Cam Action makes closed imaging devices useful to open software.
 
-Thermal Bridge reads the camera directly, applies relative sensor correction, and publishes video for OBS, Frigate, VLC, and other RTSP clients. A local companion page provides a live preview, shutter calibration, rotation, and palettes.
+The first adapter reads a REVASRI R-T160 thermal camera over its proprietary
+USB bulk protocol, performs the currently recovered sensor correction, and
+publishes a normal H.264 RTSP stream. That stream can be consumed by OBS,
+Frigate, VLC, FFmpeg, or another standard RTSP client.
 
-**Status: experimental, working on macOS ARM64 with a REVASRI R-T160.** Windows 10/11 and Linux are intended targets, not yet hardware-validated. Output is relative thermal signal—not calibrated Celsius.
+This is an experimental project. The R-T160 path is working on macOS ARM64.
+Windows 10/11 and Linux are intended targets but still need hardware testing.
+The current image is relative thermal signal, not calibrated Celsius.
 
 ```mermaid
 flowchart LR
-    USB[USB transport] <--> Camera[Camera adapter]
-    Camera --> Correction[Sensor correction]
-    Correction --> Render[Display rendering]
-    Render --> RTSP[RTSP output]
-    RTSP --> Clients[OBS / Frigate / VLC]
-    UI[Companion controls] --> Owner[Acquisition owner]
-    Owner --> Camera
+    USB[USB transport] <--> Adapter[Camera adapter]
+    Adapter --> Processing[Sensor processing]
+    Processing --> Output[Video output]
+    Output --> Clients[OBS / Frigate / VLC]
+    Controls[Local controls] --> Owner[Acquisition owner]
+    Owner --> Adapter
 ```
 
-## What works
+## What works today
 
-- Direct USB acquisition without running vendor software.
-- Camera-specific calibration-table retrieval and commanded shutter calibration.
-- White-hot, black-hot, and iron palettes; 0°/90°/180°/270° rotation.
-- Local preview and control API.
+- Direct USB acquisition without running the vendor application.
+- R-T160 calibration-table retrieval and commanded shutter calibration.
+- Relative per-pixel correction and three display palettes.
+- Rotation, local preview, status JSON, and a validated control endpoint.
 - H.264 over RTSP/TCP through FFmpeg and MediaMTX.
-- Bounded stale-frame display and reconnect attempts.
+- Reconnect attempts and a black output after two seconds without fresh data.
 
-The tested camera produces a 160×120 image. The bridge enlarges it to 640×480 and publishes at 25 fps, repeating the latest image when necessary. Initial tests decoded approximately 19–22 fresh frames/second; capture is not yet lossless. Shutter timing remains provisional.
+The tested camera produces 160×120 sensor frames. Cam Action scales them to
+640×480 for video output and maintains a 25 fps output clock. The camera itself
+delivered roughly 19–22 fresh frames per second during the initial tests.
 
 ## Quick start
 
-Install **Python 3.10+**, **libusb 1.0**, **FFmpeg with libx264**, and **[MediaMTX](https://mediamtx.org/docs/kickoff/install)** for your OS. Clone this repository and run from its root:
+Install Python 3.10 or newer, NumPy, libusb 1.0, FFmpeg with `libx264`, and
+[MediaMTX](https://mediamtx.org/docs/kickoff/install). From the repository root:
 
 ```sh
 python -m venv .venv
-# Activate .venv for your shell, then:
+# Activate .venv using your shell's normal command.
 python -m pip install -e .
 python run.py
 ```
 
-If executables are not on PATH:
+If FFmpeg or MediaMTX is not on `PATH`:
 
 ```sh
 python run.py --mediamtx /path/to/mediamtx --ffmpeg /path/to/ffmpeg
 ```
 
-Set `LIBUSB_LIBRARY` to the full path of the libusb library if discovery fails. The launcher runs both the RTSP server and the camera service; Ctrl-C stops both. No system service is installed. Hardware permissions and Windows driver binding are described in the [operations guide](docs/OPERATIONS.md).
+Set `LIBUSB_LIBRARY` to the complete libusb path when automatic discovery does
+not find it. The launcher starts MediaMTX and Cam Action together; Ctrl-C
+stops both. It does not install a system service.
 
 | Interface | Default address |
-|---|---|
-| Preview and controls | http://127.0.0.1:8787 |
+| --- | --- |
+| Preview and controls | <http://127.0.0.1:8787> |
 | RTSP video | `rtsp://127.0.0.1:18554/thermal` |
-| Status JSON | http://127.0.0.1:8787/status |
+| Status JSON | <http://127.0.0.1:8787/status> |
 
-All listeners default to loopback. Port 18554 avoids the commonly used 8554. To run just the camera service against an existing RTSP server:
+All listeners bind to loopback by default. Port 18554 avoids the commonly used
+8554. To run only the service against an existing RTSP server:
 
 ```sh
-thermal-bridge --rtsp rtsp://127.0.0.1:18554/thermal
+cam-action --rtsp rtsp://127.0.0.1:18554/thermal
 ```
 
-## OBS and YouTube
+## OBS, YouTube, and Frigate
 
-In OBS, add a **Media Source**, disable **Local File**, and enter the RTSP address. Use RTSP-over-TCP. OBS can then record or publish to YouTube using its normal streaming settings; the bridge needs no public-facing ports. No virtual-camera driver is required.
+In OBS, add a Media Source, turn off Local File, and enter the RTSP address.
+Use RTSP over TCP. OBS can record the feed or publish it to YouTube through
+its normal YouTube/RTMPS settings; Cam Action needs no public-facing port.
 
-## Frigate
+Frigate can use the same RTSP URL. If Frigate runs in a container or on another
+machine, `127.0.0.1` points to the wrong host. Expose MediaMTX deliberately on
+an accessible interface, then configure authentication and firewall rules.
+Keep the Cam Action control server on loopback. See
+[operations](docs/OPERATIONS.md) for the example configuration.
 
-Frigate can consume the RTSP feed. If Frigate is on another machine or in a container, localhost is not the camera host: configure an accessible MediaMTX listener and appropriate authentication/firewall rules. Keep the companion control API local.
+## Architecture
 
-See the [Frigate configuration example](docs/OPERATIONS.md#frigate). Providing a video feed does not imply that visible-light detection models will perform well on thermal imagery.
+Each concern has one home:
 
-## Separate the hardware from the camera processing
+| Layer | Module | Responsibility |
+| --- | --- | --- |
+| Transport | `cam_action/transport.py` | libusb loading, handles, interface selection, bulk I/O |
+| Camera adapter | `cam_action/camera.py` | Device IDs, endpoints, commands, framing, metadata, crop, timing |
+| Processing | `cam_action/processing.py` | Reference correction, contrast, palette, orientation, PNG snapshots |
+| Acquisition | `cam_action/service.py` | USB ownership, calibration scheduling, reconnects, latest-frame state |
+| Video output | `cam_action/output.py` | FFmpeg H.264 publishing |
+| Controls | `cam_action/control.py` | Local preview and validated command API |
+| Launcher | `run.py` | MediaMTX and service lifecycle |
 
-| Layer | Module | Owns |
-|---|---|---|
-| Transport | `transport.py` | libusb handles and bulk I/O |
-| Hardware adapter | `camera.py` | R-T160 IDs, endpoints, commands, packet framing, metadata, crop and timing |
-| Processing | `processing.py` | Reference correction, contrast, palette, orientation |
-| Orchestration | `service.py` | One acquisition owner, scheduling, latest frames, command queue |
-| Video output | `output.py` | FFmpeg publishing, independent of hardware |
-| Companion utility | `control.py` | Local preview and command API |
+The `Transport` and `Camera` protocols are the adapter seams. A new camera
+should get a new adapter rather than adding magic bytes or geometry to the
+processing and output modules. A native virtual-camera implementation can be
+added later as another output adapter. Android needs a USB-host integration;
+iOS is intentionally low priority.
 
-The `Transport` and `Camera` protocols are the adapter boundaries. Add another camera in its own adapter; do not spread its magic bytes or geometry through processing and output code. Native virtual cameras can be added as output adapters. Android needs its own USB host integration; iOS is low priority.
-
-## Development and evidence
+## Development
 
 ```sh
 python -m pip install -e ".[dev]"
@@ -92,12 +111,30 @@ python -m ruff format --check .
 python -m build
 ```
 
-Normal tests are synthetic and need no camera. An optional recorded-hardware regression is enabled by `THERMAL_BRIDGE_TEST_CAPTURE`; recordings are deliberately excluded from Git. CI checks Python 3.10 and 3.13 on Windows, macOS, and Linux. CI passing validates software behavior, not USB access on those platforms.
+The normal tests are synthetic and require no camera, vendor application, or
+network. Set `CAM_ACTION_TEST_CAPTURE` to a private development recording to
+enable the optional hardware-session regression; captures are excluded from
+Git. CI checks Python 3.10 and 3.13 on macOS, Linux, and Windows. CI passing
+validates software behavior, not USB access on each platform.
 
-- [Protocol observations](docs/PROTOCOL.md)
+- [Protocol notes](docs/PROTOCOL.md)
+- [Architecture](docs/ARCHITECTURE.md)
 - [Operations and platform setup](docs/OPERATIONS.md)
+- [Validation record](docs/VALIDATION.md)
 - [Roadmap](docs/ROADMAP.md)
 - [Contributing](CONTRIBUTING.md)
-- [Deployment security](SECURITY.md)
+- [Security](SECURITY.md)
 
-Vendor APKs, native libraries, decompiled source, device serial numbers, captured images, local logs, and downloaded server binaries are not part of this repository. REVASRI and Camera+ names identify the hardware/software investigated; this is an independent project.
+Vendor APKs, native libraries, decompiled source, device serial numbers,
+captured images, local logs, and downloaded server binaries are intentionally
+excluded. Product names identify the hardware investigated; this is an
+independent implementation.
+
+## License
+
+Cam Action is released under the MIT License. MIT grants broad permission to
+use, copy, modify, and redistribute the work while retaining a small copyright
+and warranty notice. A public-domain dedication sounds even simpler, but its
+legal effect varies by jurisdiction and cannot always be guaranteed for every
+contributor. MIT is the practical default here; contributors should make their
+intent clear when submitting work.

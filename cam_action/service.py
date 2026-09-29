@@ -1,17 +1,26 @@
-"""Orchestration. Camera commands run exclusively on the acquisition thread."""
+"""Application orchestration.
+
+One acquisition thread owns the camera. Other threads receive the latest
+rendered frame or enqueue a command; they never touch USB directly.
+"""
+
+from __future__ import annotations
 
 import logging
 import queue
 import threading
 import time
+from collections.abc import Callable
 
 import numpy as np
 
-from .camera import SensorFrame
+from .camera import Camera, SensorFrame
 from .processing import Calibration, Renderer
 
 
 class State:
+    """Thread-safe status, latest frame, display options, and command queue."""
+
     def __init__(self):
         self.lock = threading.Lock()
         self.commands = queue.Queue(maxsize=8)
@@ -26,11 +35,11 @@ class State:
         self.frame = np.zeros((480, 640, 3), dtype=np.uint8)
         self.updated = 0
 
-    def update(self, **kw):
+    def update(self, **kw: object) -> None:
         with self.lock:
             self.info.update(kw)
 
-    def snapshot(self):
+    def snapshot(self) -> dict[str, object]:
         with self.lock:
             return dict(
                 self.info,
@@ -39,16 +48,16 @@ class State:
                 else None,
             )
 
-    def options(self):
+    def options(self) -> tuple[int, str]:
         with self.lock:
             return self.info["rotation"], self.info["palette"]
 
-    def set_frame(self, frame):
+    def set_frame(self, frame: np.ndarray) -> None:
         with self.lock:
             self.frame = frame
             self.updated = time.monotonic()
 
-    def video_frame(self):
+    def video_frame(self) -> np.ndarray:
         with self.lock:
             # Never present indefinitely stale images as live: black after 2 seconds.
             if not self.updated or time.monotonic() - self.updated > 2:
@@ -57,7 +66,15 @@ class State:
 
 
 class Acquisition:
-    def __init__(self, factory, state, stop, calibration_interval=90):
+    """Run a camera adapter, schedule calibration, and publish rendered frames."""
+
+    def __init__(
+        self,
+        factory: Callable[[], Camera],
+        state: State,
+        stop: threading.Event,
+        calibration_interval: float = 90,
+    ):
         self.factory = factory
         self.state = state
         self.stop = stop

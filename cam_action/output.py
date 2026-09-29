@@ -1,4 +1,10 @@
-"""Video output adapter. FFmpeg publishes H.264; an external RTSP server fans it out."""
+"""FFmpeg video output adapter.
+
+Cam Action writes raw RGB frames here. MediaMTX, configured outside this
+module, fans the resulting RTSP stream out to clients.
+"""
+
+from __future__ import annotations
 
 import subprocess
 import time
@@ -6,7 +12,9 @@ from pathlib import Path
 
 
 class RtspOutput:
-    def __init__(self, state, stop, url, ffmpeg, log):
+    """Publish the latest rendered frame at a stable output cadence."""
+
+    def __init__(self, state, stop, url: str, ffmpeg: str, log: Path):
         self.state = state
         self.stop = stop
         self.url = url
@@ -59,6 +67,8 @@ class RtspOutput:
                         stderr=err,
                     )
                     process = self.process
+                    if process.stdin is None:
+                        raise RuntimeError("FFmpeg did not open a video input")
                     due = time.monotonic()
                     while not self.stop.is_set():
                         frame = self.state.video_frame()
@@ -69,7 +79,7 @@ class RtspOutput:
                         if due < time.monotonic() - 0.08:
                             due = time.monotonic()
                         self.stop.wait(max(0, due - time.monotonic()))
-            except (OSError, ValueError) as e:
+            except (BrokenPipeError, OSError, RuntimeError, ValueError) as e:
                 self.state.update(publisher=f"retrying: {e}")
             finally:
                 self.close()
